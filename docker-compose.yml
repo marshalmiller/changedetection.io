@@ -7,13 +7,13 @@ services:
       volumes:
         - changedetection-data:/datastore
 
-  #    environment:
-  #        Default listening port, can also be changed with the -p option
-  #      - PORT=5000
+      environment:
+          Default listening port, can also be changed with the -p option
+        - PORT=5000
 
-  #      - PUID=1000
-  #      - PGID=1000
-  #
+        - PUID=1000
+        - PGID=1000
+  
   #       Alternative WebDriver/selenium URL, do not use "'s or 's!
         - WEBDRIVER_URL=http://browser-chrome:4444/wd/hub
   
