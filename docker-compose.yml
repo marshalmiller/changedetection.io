@@ -15,7 +15,7 @@ services:
    #     - PGID=1000
   
   #       Alternative WebDriver/selenium URL, do not use "'s or 's!
-  #      - WEBDRIVER_URL=http://browser-chrome:4444/wd/hub
+        - WEBDRIVER_URL=http://browser-chrome:4444/wd/hub
   
   #       WebDriver proxy settings webdriver_proxyType, webdriver_ftpProxy, webdriver_httpProxy, webdriver_noProxy,
   #                                webdriver_proxyAutoconfigUrl, webdriver_sslProxy, webdriver_autodetect,
