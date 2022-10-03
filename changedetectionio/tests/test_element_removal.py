@@ -145,20 +145,19 @@ def test_element_removal_full(client, live_server):
     assert bytes(subtractive_selectors_data.encode("utf-8")) in res.data
 
     # Trigger a check
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
 
     # Give the thread time to pick it up
     time.sleep(sleep_time_for_fetch_thread)
 
-    # No change yet - first check
-    res = client.get(url_for("index"))
-    assert b"unviewed" not in res.data
+    # so that we set the state to 'unviewed' after all the edits
+    client.get(url_for("diff_history_page", uuid="first"))
 
     #  Make a change to header/footer/nav
     set_modified_response()
 
     # Trigger a check
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
 
     # Give the thread time to pick it up
     time.sleep(sleep_time_for_fetch_thread)

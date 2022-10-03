@@ -1,11 +1,11 @@
 /*
  * -- BASE STYLES --
  * Most of these are inherited from Base, but I want to change a few.
- * nvm use v14.18.1
- * npm install
- * npm run build
+ * nvm use v14.18.1 && npm install && npm run build
  * or npm run watch
  */
+@import "parts/_arrows.scss";
+
 body {
   color: #333;
   background: #262626;
@@ -70,6 +70,17 @@ code {
 
   th {
     white-space: nowrap;
+    a {
+      font-weight: normal;
+      &.active {
+        font-weight: bolder;
+      }
+      &.inactive {
+        .arrow {
+          display: none;
+        }
+      }
+    }
   }
 
   .title-col a[target="_blank"]::after, .current-diff-url::after {
@@ -137,29 +148,6 @@ body::before {
 body:after, body:before {
   -webkit-clip-path: polygon(100% 0, 0 0, 0 77.5%, 1% 77.4%, 2% 77.1%, 3% 76.6%, 4% 75.9%, 5% 75.05%, 6% 74.05%, 7% 72.95%, 8% 71.75%, 9% 70.55%, 10% 69.3%, 11% 68.05%, 12% 66.9%, 13% 65.8%, 14% 64.8%, 15% 64%, 16% 63.35%, 17% 62.85%, 18% 62.6%, 19% 62.5%, 20% 62.65%, 21% 63%, 22% 63.5%, 23% 64.2%, 24% 65.1%, 25% 66.1%, 26% 67.2%, 27% 68.4%, 28% 69.65%, 29% 70.9%, 30% 72.15%, 31% 73.3%, 32% 74.35%, 33% 75.3%, 34% 76.1%, 35% 76.75%, 36% 77.2%, 37% 77.45%, 38% 77.5%, 39% 77.3%, 40% 76.95%, 41% 76.4%, 42% 75.65%, 43% 74.75%, 44% 73.75%, 45% 72.6%, 46% 71.4%, 47% 70.15%, 48% 68.9%, 49% 67.7%, 50% 66.55%, 51% 65.5%, 52% 64.55%, 53% 63.75%, 54% 63.15%, 55% 62.75%, 56% 62.55%, 57% 62.5%, 58% 62.7%, 59% 63.1%, 60% 63.7%, 61% 64.45%, 62% 65.4%, 63% 66.45%, 64% 67.6%, 65% 68.8%, 66% 70.05%, 67% 71.3%, 68% 72.5%, 69% 73.6%, 70% 74.65%, 71% 75.55%, 72% 76.35%, 73% 76.9%, 74% 77.3%, 75% 77.5%, 76% 77.45%, 77% 77.25%, 78% 76.8%, 79% 76.2%, 80% 75.4%, 81% 74.45%, 82% 73.4%, 83% 72.25%, 84% 71.05%, 85% 69.8%, 86% 68.55%, 87% 67.35%, 88% 66.2%, 89% 65.2%, 90% 64.3%, 91% 63.55%, 92% 63%, 93% 62.65%, 94% 62.5%, 95% 62.55%, 96% 62.8%, 97% 63.3%, 98% 63.9%, 99% 64.75%, 100% 65.7%);
   clip-path: polygon(100% 0, 0 0, 0 77.5%, 1% 77.4%, 2% 77.1%, 3% 76.6%, 4% 75.9%, 5% 75.05%, 6% 74.05%, 7% 72.95%, 8% 71.75%, 9% 70.55%, 10% 69.3%, 11% 68.05%, 12% 66.9%, 13% 65.8%, 14% 64.8%, 15% 64%, 16% 63.35%, 17% 62.85%, 18% 62.6%, 19% 62.5%, 20% 62.65%, 21% 63%, 22% 63.5%, 23% 64.2%, 24% 65.1%, 25% 66.1%, 26% 67.2%, 27% 68.4%, 28% 69.65%, 29% 70.9%, 30% 72.15%, 31% 73.3%, 32% 74.35%, 33% 75.3%, 34% 76.1%, 35% 76.75%, 36% 77.2%, 37% 77.45%, 38% 77.5%, 39% 77.3%, 40% 76.95%, 41% 76.4%, 42% 75.65%, 43% 74.75%, 44% 73.75%, 45% 72.6%, 46% 71.4%, 47% 70.15%, 48% 68.9%, 49% 67.7%, 50% 66.55%, 51% 65.5%, 52% 64.55%, 53% 63.75%, 54% 63.15%, 55% 62.75%, 56% 62.55%, 57% 62.5%, 58% 62.7%, 59% 63.1%, 60% 63.7%, 61% 64.45%, 62% 65.4%, 63% 66.45%, 64% 67.6%, 65% 68.8%, 66% 70.05%, 67% 71.3%, 68% 72.5%, 69% 73.6%, 70% 74.65%, 71% 75.55%, 72% 76.35%, 73% 76.9%, 74% 77.3%, 75% 77.5%, 76% 77.45%, 77% 77.25%, 78% 76.8%, 79% 76.2%, 80% 75.4%, 81% 74.45%, 82% 73.4%, 83% 72.25%, 84% 71.05%, 85% 69.8%, 86% 68.55%, 87% 67.35%, 88% 66.2%, 89% 65.2%, 90% 64.3%, 91% 63.55%, 92% 63%, 93% 62.65%, 94% 62.5%, 95% 62.55%, 96% 62.8%, 97% 63.3%, 98% 63.9%, 99% 64.75%, 100% 65.7%)
-}
-
-.arrow {
-  border: solid black;
-  border-width: 0 3px 3px 0;
-  display: inline-block;
-  padding: 3px;
-    &.right {
-      transform: rotate(-45deg);
-      -webkit-transform: rotate(-45deg);
-    }
-    &.left {
-      transform: rotate(135deg);
-      -webkit-transform: rotate(135deg);
-    }
-    &.up {
-      transform: rotate(-135deg);
-      -webkit-transform: rotate(-135deg);
-    }
-    &.down {
-      transform: rotate(45deg);
-      -webkit-transform: rotate(45deg);
-    }
 }
 
 .button-small {
@@ -237,6 +225,11 @@ body:after, body:before {
             background: rgba(255, 255, 255, .5);
         }
     }
+    &.with-share-link {
+     > *:hover {
+       cursor:pointer;
+     }
+    }
 }
 
 #notification-customisation {
@@ -264,8 +257,8 @@ body:after, body:before {
   border-radius: 10px;
   margin-bottom: 1em;
   input {
-    width: auto !important;
     display: inline-block;
+    margin-bottom: 5px;
   }
   .label {
     display: none;
@@ -273,6 +266,17 @@ body:after, body:before {
   legend {
     color: #fff;
     font-weight: bold;
+  }
+
+  #watch-add-wrapper-zone {
+    > div {
+      display: inline-block;
+    }
+    @media only screen and (max-width: 760px) {
+      #url {
+        width: 100%;
+      }
+    }
   }
 }
 
@@ -348,14 +352,25 @@ footer {
   color: #e07171;
 }
 
-.paused-state {
-  &.state-False img {
+.watch-controls {
+  .state-on {
+    img {
+      opacity: 0.8;
+    }
+  }
+
+  /* default */
+  img {
     opacity: 0.2;
   }
 
-  &.state-False:hover img {
-    opacity: 0.8;
+  img {
+    &:hover {
+      transition: opacity 0.3s;
+      opacity: 0.8;
+    }
   }
+
 }
 
 .monospaced-textarea {
@@ -370,6 +385,13 @@ footer {
 
 
 .pure-form {
+    fieldset {
+        padding-top: 0px;
+        ul {
+            padding-bottom: 0px;
+            margin-bottom: 0px;
+        }
+    }
     .pure-control-group, .pure-group, .pure-controls {
         padding-bottom: 1em;
         div {
@@ -413,14 +435,16 @@ footer {
   textarea {
     width: 100%;
   }
-  ul#fetch_backend {
-    margin: 0px;
-    list-style: none;
-    > li {
-        > * {
-            display: inline-block;
+  .inline-radio {
+      ul {
+        margin: 0px;
+        list-style: none;
+        li {
+            > * {
+                display: inline-block;
+            }
         }
-    }
+      }
   }
 }
 
@@ -455,6 +479,7 @@ footer {
   div.tabs.collapsable ul li {
     display: block;
     border-radius: 0px;
+    margin-right: 0px;
   }
 
   input[type='text'] {
@@ -470,6 +495,12 @@ and also iPads specifically.
     /* Force table to not be like tables anymore */
     thead, tbody, th, td, tr {
       display: block;
+    }
+
+    .last-checked {
+      > span {
+        vertical-align: middle;
+      }
     }
 
     .last-checked::before {
@@ -502,7 +533,7 @@ and also iPads specifically.
       /* Behave  like a "row" */
       border: none;
       border-bottom: 1px solid #eee;
-
+      vertical-align: middle;
       &:before {
         /* Top/left values mimic padding */
         top: 6px;
@@ -599,6 +630,18 @@ $form-edge-padding: 20px;
     padding: 0px;
 }
 
+#beta-logo {
+    height: 50px;
+    // looks better when it's hanging off a little
+    right: -3px;
+    top: -3px;
+    position: absolute;
+}
+
+#selector-header {
+    padding-bottom: 1em;
+}
+
 .edit-form {
   min-width: 70%;
   /* so it cant overflow */
@@ -624,4 +667,122 @@ ul {
     padding-left: 1em;
     padding-top: 0px;
     margin-top: 4px;
+}
+
+.time-check-widget {
+    tr {
+        display: inline;
+        input[type="number"] {
+            width: 5em;
+        }
+    }
+}
+
+#selector-wrapper {
+ height: 600px;
+ overflow-y: scroll;
+ position: relative;
+    //width: 100%;
+ > img {
+    position: absolute;
+    z-index: 4;
+    max-width: 100%;
+ }
+ >canvas {
+    position: relative;
+    z-index: 5;
+     max-width: 100%;
+     &:hover {
+     cursor: pointer;
+     }
+ }
+}
+
+#selector-current-xpath {
+  font-size: 80%;
+}
+
+#webdriver-override-options {
+        input[type="number"] {
+            width: 5em;
+        }
+}
+
+#api-key {
+  &:hover {
+    cursor: pointer;
+  }
+}
+
+#api-key-copy {
+  color: #0078e7;
+}
+
+/* spinner */
+.loader,
+.loader:after {
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+}
+.loader {
+  margin: 0px auto;
+  font-size: 3px;
+  vertical-align: middle;
+  display: inline-block;
+  text-indent: -9999em;
+  border-top: 1.1em solid rgba(38,104,237, 0.2);
+  border-right: 1.1em solid rgba(38,104,237, 0.2);
+  border-bottom: 1.1em solid rgba(38,104,237, 0.2);
+  border-left: 1.1em solid #2668ed;
+  -webkit-transform: translateZ(0);
+  -ms-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-animation: load8 1.1s infinite linear;
+  animation: load8 1.1s infinite linear;
+}
+@-webkit-keyframes load8 {
+  0% {
+    -webkit-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+@keyframes load8 {
+  0% {
+    -webkit-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
+}
+
+.snapshot-age {
+  padding: 4px;
+  background-color: #dfdfdf;
+  border-radius: 3px;
+  font-weight: bold;
+  margin-bottom: 4px;
+  &.error {
+    background-color: #ff0000;
+    color: #fff;
+  }
+}
+
+#checkbox-operations {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1em;
+  border-radius: 10px;
+  margin-bottom: 1em;
+  display: none;
+}
+.checkbox-uuid {
+  > * {
+    vertical-align: middle;
+  }
 }

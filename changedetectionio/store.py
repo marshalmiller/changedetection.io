@@ -1,3 +1,6 @@
+from flask import (
+    flash
+)
 import json
 import logging
 import os
@@ -5,21 +8,24 @@ import threading
 import time
 import uuid as uuid_builder
 from copy import deepcopy
-from os import mkdir, path, unlink
+from os import path, unlink
 from threading import Lock
+import re
+import requests
+import secrets
 
-from changedetectionio.notification import (
-    default_notification_body,
-    default_notification_format,
-    default_notification_title,
-)
-
+from . model import App, Watch
 
 # Is there an existing library to ensure some data store (JSON etc) is in sync with CRUD methods?
 # Open a github issue if you know something :)
 # https://stackoverflow.com/questions/6190468/how-to-trigger-function-on-value-change
 class ChangeDetectionStore:
     lock = Lock()
+    # For general updates/writes that can wait a few seconds
+    needs_write = False
+
+    # For when we edit, we should write to disk
+    needs_write_urgent = False
 
     def __init__(self, datastore_path="/datastore", include_default_watches=True, version_tag="0.0.0"):
         # Should only be active for docker
@@ -27,73 +33,14 @@ class ChangeDetectionStore:
         self.needs_write = False
         self.datastore_path = datastore_path
         self.json_store_path = "{}/url-watches.json".format(self.datastore_path)
+        self.proxy_list = None
         self.stop_thread = False
 
-        self.__data = {
-            'note': "Hello! If you change this file manually, please be sure to restart your changedetection.io instance!",
-            'watching': {},
-            'settings': {
-                'headers': {
-                    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate',  # No support for brolti in python requests yet.
-                    'Accept-Language': 'en-GB,en-US;q=0.9,en;'
-                },
-                'requests': {
-                    'timeout': 15,  # Default 15 seconds
-                    'minutes_between_check': 3 * 60,  # Default 3 hours
-                    'workers': 10  # Number of threads, lower is better for slow connections
-                },
-                'application': {
-                    'password': False,
-                    'base_url' : None,
-                    'extract_title_as_title': False,
-                    'fetch_backend': 'html_requests',
-                    'global_ignore_text': [], # List of text to ignore when calculating the comparison checksum
-                    'global_subtractive_selectors': [],
-                    'ignore_whitespace': False,
-                    'render_anchor_tag_content': False,
-                    'notification_urls': [], # Apprise URL list
-                    # Custom notification content
-                    'notification_title': default_notification_title,
-                    'notification_body': default_notification_body,
-                    'notification_format': default_notification_format,
-                    'real_browser_save_screenshot': True,
-                }
-            }
-        }
+        self.__data = App.model()
 
         # Base definition for all watchers
-        self.generic_definition = {
-            'url': None,
-            'tag': None,
-            'last_checked': 0,
-            'last_changed': 0,
-            'paused': False,
-            'last_viewed': 0,  # history key value of the last viewed via the [diff] link
-            'newest_history_key': "",
-            'title': None,
-            # Re #110, so then if this is set to None, we know to use the default value instead
-            # Requires setting to None on submit if it's the same as the default
-            'minutes_between_check': None,
-            'previous_md5': "",
-            'uuid': str(uuid_builder.uuid4()),
-            'headers': {},  # Extra headers to send
-            'body': None,
-            'method': 'GET',
-            'history': {},  # Dict of timestamp and output stripped filename
-            'ignore_text': [], # List of text to ignore when calculating the comparison checksum
-            # Custom notification content
-            'notification_urls': [], # List of URLs to add to the notification Queue (Usually AppRise)
-            'notification_title': default_notification_title,
-            'notification_body': default_notification_body,
-            'notification_format': default_notification_format,
-            'css_filter': "",
-            'subtractive_selectors': [],
-            'trigger_text': [],  # List of text or regex to wait for until a change is detected
-            'fetch_backend': None,
-            'extract_title_as_title': False
-        }
+        # deepcopy part of #569 - not sure why its needed exactly
+        self.generic_definition = deepcopy(Watch.model(datastore_path = datastore_path, default={}))
 
         if path.isfile('changedetectionio/source.txt'):
             with open('changedetectionio/source.txt') as f:
@@ -124,13 +71,10 @@ class ChangeDetectionStore:
                     if 'application' in from_disk['settings']:
                         self.__data['settings']['application'].update(from_disk['settings']['application'])
 
-                # Reinitialise each `watching` with our generic_definition in the case that we add a new var in the future.
-                # @todo pretty sure theres a python we todo this with an abstracted(?) object!
+                # Convert each existing watch back to the Watch.model object
                 for uuid, watch in self.__data['watching'].items():
-                    _blank = deepcopy(self.generic_definition)
-                    _blank.update(watch)
-                    self.__data['watching'].update({uuid: _blank})
-                    self.__data['watching'][uuid]['newest_history_key'] = self.get_newest_history_key(uuid)
+                    watch['uuid']=uuid
+                    self.__data['watching'][uuid] = Watch.model(datastore_path=self.datastore_path, default=watch)
                     print("Watching:", uuid, self.__data['watching'][uuid]['url'])
 
         # First time ran, doesnt exist.
@@ -140,8 +84,7 @@ class ChangeDetectionStore:
 
                 self.add_watch(url='http://www.quotationspage.com/random.php', tag='test')
                 self.add_watch(url='https://news.ycombinator.com/', tag='Tech news')
-                self.add_watch(url='https://www.gov.uk/coronavirus', tag='Covid')
-                self.add_watch(url='https://changedetection.io/CHANGELOG.txt')
+                self.add_watch(url='https://changedetection.io/CHANGELOG.txt', tag='changedetection.io')
 
         self.__data['version_tag'] = version_tag
 
@@ -161,36 +104,43 @@ class ChangeDetectionStore:
 
         # Generate the URL access token for RSS feeds
         if not 'rss_access_token' in self.__data['settings']['application']:
-            import secrets
             secret = secrets.token_hex(16)
             self.__data['settings']['application']['rss_access_token'] = secret
+
+        # Generate the API access token
+        if not 'api_access_token' in self.__data['settings']['application']:
+            secret = secrets.token_hex(16)
+            self.__data['settings']['application']['api_access_token'] = secret
+
+        # Proxy list support - available as a selection in settings when text file is imported
+        # CSV list
+        # "name, address", or just "name"
+        proxy_list_file = "{}/proxies.txt".format(self.datastore_path)
+        if path.isfile(proxy_list_file):
+            self.import_proxy_list(proxy_list_file)
+
+        # Bump the update version by running updates
+        self.run_updates()
 
         self.needs_write = True
 
         # Finally start the thread that will manage periodic data saves to JSON
         save_data_thread = threading.Thread(target=self.save_datastore).start()
 
-    # Returns the newest key, but if theres only 1 record, then it's counted as not being new, so return 0.
-    def get_newest_history_key(self, uuid):
-        if len(self.__data['watching'][uuid]['history']) == 1:
-            return 0
-
-        dates = list(self.__data['watching'][uuid]['history'].keys())
-        # Convert to int, sort and back to str again
-        # @todo replace datastore getter that does this automatically
-        dates = [int(i) for i in dates]
-        dates.sort(reverse=True)
-        if len(dates):
-            # always keyed as str
-            return str(dates[0])
-
-        return 0
-
     def set_last_viewed(self, uuid, timestamp):
+        logging.debug("Setting watch UUID: {} last viewed to {}".format(uuid, int(timestamp)))
         self.data['watching'][uuid].update({'last_viewed': int(timestamp)})
         self.needs_write = True
 
+    def remove_password(self):
+        self.__data['settings']['application']['password'] = False
+        self.needs_write = True
+
     def update_watch(self, uuid, update_obj):
+
+        # It's possible that the watch could be deleted before update
+        if not self.__data['watching'].get(uuid):
+            return
 
         with self.lock:
 
@@ -202,24 +152,32 @@ class ChangeDetectionStore:
                         del (update_obj[dict_key])
 
             self.__data['watching'][uuid].update(update_obj)
-            self.__data['watching'][uuid]['newest_history_key'] = self.get_newest_history_key(uuid)
 
         self.needs_write = True
 
     @property
+    def threshold_seconds(self):
+        seconds = 0
+        for m, n in Watch.mtable.items():
+            x = self.__data['settings']['requests']['time_between_check'].get(m)
+            if x:
+                seconds += x * n
+        return seconds
+
+    @property
+    def has_unviewed(self):
+        for uuid, watch in self.__data['watching'].items():
+            if watch.viewed == False:
+                return True
+        return False
+
+    @property
     def data(self):
         has_unviewed = False
-        for uuid, v in self.__data['watching'].items():
-            self.__data['watching'][uuid]['newest_history_key'] = self.get_newest_history_key(uuid)
-            if int(v['newest_history_key']) <= int(v['last_viewed']):
-                self.__data['watching'][uuid]['viewed'] = True
-
-            else:
-                self.__data['watching'][uuid]['viewed'] = False
-                has_unviewed = True
-
+        for uuid, watch in self.__data['watching'].items():
             # #106 - Be sure this is None on empty string, False, None, etc
             # Default var for fetch_backend
+            # @todo this may not be needed anymore, or could be easily removed
             if not self.__data['watching'][uuid]['fetch_backend']:
                 self.__data['watching'][uuid]['fetch_backend'] = self.__data['settings']['application']['fetch_backend']
 
@@ -228,14 +186,13 @@ class ChangeDetectionStore:
         if not self.__data['settings']['application']['base_url']:
           self.__data['settings']['application']['base_url'] = env_base_url.strip('" ')
 
-        self.__data['has_unviewed'] = has_unviewed
-
         return self.__data
 
     def get_all_tags(self):
         tags = []
         for uuid, watch in self.data['watching'].items():
-
+            if watch['tag'] is None:
+                continue
             # Support for comma separated list of tags.
             for tag in watch['tag'].split(','):
                 tag = tag.strip()
@@ -259,16 +216,16 @@ class ChangeDetectionStore:
 
                 # GitHub #30 also delete history records
                 for uuid in self.data['watching']:
-                    for path in self.data['watching'][uuid]['history'].values():
+                    for path in self.data['watching'][uuid].history.values():
                         self.unlink_history_file(path)
 
             else:
-                for path in self.data['watching'][uuid]['history'].values():
+                for path in self.data['watching'][uuid].history.values():
                     self.unlink_history_file(path)
 
                 del self.data['watching'][uuid]
 
-            self.needs_write = True
+            self.needs_write_urgent = True
 
     # Clone a watch by UUID
     def clone(self, uuid):
@@ -292,116 +249,136 @@ class ChangeDetectionStore:
         return self.data['watching'][uuid].get(val)
 
     # Remove a watchs data but keep the entry (URL etc)
-    def scrub_watch(self, uuid, limit_timestamp = False):
+    def clear_watch_history(self, uuid):
+        import pathlib
 
-        import hashlib
-        del_timestamps = []
+        self.__data['watching'][uuid].update(
+            {'last_checked': 0,
+             'last_viewed': 0,
+             'previous_md5': False,
+             'last_notification_error': False,
+             'last_error': False})
 
-        changes_removed = 0
+        # JSON Data, Screenshots, Textfiles (history index and snapshots), HTML in the future etc
+        for item in pathlib.Path(os.path.join(self.datastore_path, uuid)).rglob("*.*"):
+            unlink(item)
 
-        for timestamp, path in self.data['watching'][uuid]['history'].items():
-            if not limit_timestamp or (limit_timestamp is not False and int(timestamp) > limit_timestamp):
-                self.unlink_history_file(path)
-                del_timestamps.append(timestamp)
-                changes_removed += 1
+        # Force the attr to recalculate
+        bump = self.__data['watching'][uuid].history
 
-        if not limit_timestamp:
-            self.data['watching'][uuid]['last_checked'] = 0
-            self.data['watching'][uuid]['last_changed'] = 0
-            self.data['watching'][uuid]['previous_md5'] = ""
+        self.needs_write_urgent = True
 
+    def add_watch(self, url, tag="", extras=None, write_to_disk_now=True):
 
-        for timestamp in del_timestamps:
-            del self.data['watching'][uuid]['history'][str(timestamp)]
-
-            # If there was a limitstamp, we need to reset some meta data about the entry
-            # This has to happen after we remove the others from the list
-            if limit_timestamp:
-                newest_key = self.get_newest_history_key(uuid)
-                if newest_key:
-                    self.data['watching'][uuid]['last_checked'] = int(newest_key)
-                    # @todo should be the original value if it was less than newest key
-                    self.data['watching'][uuid]['last_changed'] = int(newest_key)
-                    try:
-                        with open(self.data['watching'][uuid]['history'][str(newest_key)], "rb") as fp:
-                            content = fp.read()
-                        self.data['watching'][uuid]['previous_md5'] = hashlib.md5(content).hexdigest()
-                    except (FileNotFoundError, IOError):
-                        self.data['watching'][uuid]['previous_md5'] = ""
-                        pass
-
-        self.needs_write = True
-        return changes_removed
-
-    def add_watch(self, url, tag="", extras=None):
         if extras is None:
             extras = {}
+        # should always be str
+        if tag is None or not tag:
+            tag=''
+
+        # Incase these are copied across, assume it's a reference and deepcopy()
+        apply_extras = deepcopy(extras)
+
+        # Was it a share link? try to fetch the data
+        if (url.startswith("https://changedetection.io/share/")):
+            try:
+                r = requests.request(method="GET",
+                                     url=url,
+                                     # So we know to return the JSON instead of the human-friendly "help" page
+                                     headers={'App-Guid': self.__data['app_guid']})
+                res = r.json()
+
+                # List of permissible attributes we accept from the wild internet
+                for k in ['url', 'tag',
+                          'paused', 'title',
+                          'previous_md5', 'headers',
+                          'body', 'method',
+                          'ignore_text', 'css_filter',
+                          'subtractive_selectors', 'trigger_text',
+                          'extract_title_as_title', 'extract_text',
+                          'text_should_not_be_present',
+                          'webdriver_js_execute_code']:
+                    if res.get(k):
+                        apply_extras[k] = res[k]
+
+            except Exception as e:
+                logging.error("Error fetching metadata for shared watch link", url, str(e))
+                flash("Error fetching metadata for {}".format(url), 'error')
+                return False
 
         with self.lock:
-            # @todo use a common generic version of this
-            new_uuid = str(uuid_builder.uuid4())
-            _blank = deepcopy(self.generic_definition)
-            _blank.update({
+
+            # #Re 569
+            new_watch = Watch.model(datastore_path=self.datastore_path, default={
                 'url': url,
                 'tag': tag
             })
 
-            # Incase these are copied across, assume it's a reference and deepcopy()
-            apply_extras = deepcopy(extras)
+            new_uuid = new_watch['uuid']
+            logging.debug("Added URL {} - {}".format(url, new_uuid))
+
             for k in ['uuid', 'history', 'last_checked', 'last_changed', 'newest_history_key', 'previous_md5', 'viewed']:
                 if k in apply_extras:
                     del apply_extras[k]
 
-            _blank.update(apply_extras)
+            new_watch.update(apply_extras)
+            self.__data['watching'][new_uuid]=new_watch
 
-            self.data['watching'][new_uuid] = _blank
+        self.__data['watching'][new_uuid].ensure_data_dir_exists()
 
-        # Get the directory ready
-        output_path = "{}/{}".format(self.datastore_path, new_uuid)
-        try:
-            mkdir(output_path)
-        except FileExistsError:
-            print(output_path, "already exists.")
-
-        self.sync_to_json()
+        if write_to_disk_now:
+            self.sync_to_json()
         return new_uuid
 
-    # Save some text file to the appropriate path and bump the history
-    # result_obj from fetch_site_status.run()
-    def save_history_text(self, watch_uuid, contents):
-        import uuid
-
+    def visualselector_data_is_ready(self, watch_uuid):
         output_path = "{}/{}".format(self.datastore_path, watch_uuid)
-        # Incase the operator deleted it, check and create.
-        if not os.path.isdir(output_path):
-            mkdir(output_path)
-
-        fname = "{}/{}.stripped.txt".format(output_path, uuid.uuid4())
-        with open(fname, 'wb') as f:
-            f.write(contents)
-            f.close()
-
-        return fname
-
-    def get_screenshot(self, watch_uuid):
-        output_path = "{}/{}".format(self.datastore_path, watch_uuid)
-        fname = "{}/last-screenshot.png".format(output_path)
-        if path.isfile(fname):
-            return fname
+        screenshot_filename = "{}/last-screenshot.png".format(output_path)
+        elements_index_filename = "{}/elements.json".format(output_path)
+        if path.isfile(screenshot_filename) and  path.isfile(elements_index_filename) :
+            return True
 
         return False
 
     # Save as PNG, PNG is larger but better for doing visual diff in the future
-    def save_screenshot(self, watch_uuid, screenshot: bytes):
-        output_path = "{}/{}".format(self.datastore_path, watch_uuid)
-        fname = "{}/last-screenshot.png".format(output_path)
-        with open(fname, 'wb') as f:
+    def save_screenshot(self, watch_uuid, screenshot: bytes, as_error=False):
+        if not self.data['watching'].get(watch_uuid):
+            return
+
+        if as_error:
+            target_path = os.path.join(self.datastore_path, watch_uuid, "last-error-screenshot.png")
+        else:
+            target_path = os.path.join(self.datastore_path, watch_uuid, "last-screenshot.png")
+
+        self.data['watching'][watch_uuid].ensure_data_dir_exists()
+
+        with open(target_path, 'wb') as f:
             f.write(screenshot)
             f.close()
 
+    def save_error_text(self, watch_uuid, contents):
+        if not self.data['watching'].get(watch_uuid):
+            return
+        target_path = os.path.join(self.datastore_path, watch_uuid, "last-error.txt")
+
+        with open(target_path, 'w') as f:
+            f.write(contents)
+
+    def save_xpath_data(self, watch_uuid, data, as_error=False):
+        if not self.data['watching'].get(watch_uuid):
+            return
+        if as_error:
+            target_path = os.path.join(self.datastore_path, watch_uuid, "elements-error.json")
+        else:
+            target_path = os.path.join(self.datastore_path, watch_uuid, "elements.json")
+
+        with open(target_path, 'w') as f:
+            f.write(json.dumps(data))
+            f.close()
+
+
     def sync_to_json(self):
         logging.info("Saving JSON..")
-
+        print("Saving JSON..")
         try:
             data = deepcopy(self.__data)
         except RuntimeError as e:
@@ -423,6 +400,7 @@ class ChangeDetectionStore:
                 logging.error("Error writing JSON!! (Main JSON file save was skipped) : %s", str(e))
 
             self.needs_write = False
+            self.needs_write_urgent = False
 
     # Thread runner, this helps with thread/write issues when there are many operations that want to update the JSON
     # by just running periodically in one thread, according to python, dict updates are threadsafe.
@@ -433,14 +411,14 @@ class ChangeDetectionStore:
                 print("Shutting down datastore thread")
                 return
 
-            if self.needs_write:
+            if self.needs_write or self.needs_write_urgent:
                 self.sync_to_json()
 
             # Once per minute is enough, more and it can cause high CPU usage
             # better here is to use something like self.app.config.exit.wait(1), but we cant get to 'app' from here
-            for i in range(30):
-                time.sleep(2)
-                if self.stop_thread:
+            for i in range(120):
+                time.sleep(0.5)
+                if self.stop_thread or self.needs_write_urgent:
                     break
 
     # Go through the datastore path and remove any snapshots that are not mentioned in the index
@@ -450,13 +428,115 @@ class ChangeDetectionStore:
 
         index=[]
         for uuid in self.data['watching']:
-            for id in self.data['watching'][uuid]['history']:
-                index.append(self.data['watching'][uuid]['history'][str(id)])
+            for id in self.data['watching'][uuid].history:
+                index.append(self.data['watching'][uuid].history[str(id)])
 
         import pathlib
 
         # Only in the sub-directories
-        for item in pathlib.Path(self.datastore_path).rglob("*/*txt"):
-            if not str(item) in index:
-                print ("Removing",item)
-                unlink(item)
+        for uuid in self.data['watching']:
+            for item in pathlib.Path(self.datastore_path).rglob(uuid+"/*.txt"):
+                if not str(item) in index:
+                    print ("Removing",item)
+                    unlink(item)
+
+    def import_proxy_list(self, filename):
+        import csv
+        with open(filename, newline='') as f:
+            reader = csv.reader(f, skipinitialspace=True)
+            # @todo This loop can could be improved
+            l = []
+            for row in reader:
+                if len(row):
+                    if len(row)>=2:
+                        l.append(tuple(row[:2]))
+                    else:
+                        l.append(tuple([row[0], row[0]]))
+            self.proxy_list = l if len(l) else None
+
+
+    # Run all updates
+    # IMPORTANT - Each update could be run even when they have a new install and the schema is correct
+    #             So therefor - each `update_n` should be very careful about checking if it needs to actually run
+    #             Probably we should bump the current update schema version with each tag release version?
+    def run_updates(self):
+        import inspect
+        import shutil
+
+        updates_available = []
+        for i, o in inspect.getmembers(self, predicate=inspect.ismethod):
+            m = re.search(r'update_(\d+)$', i)
+            if m:
+                updates_available.append(int(m.group(1)))
+        updates_available.sort()
+
+        for update_n in updates_available:
+            if update_n > self.__data['settings']['application']['schema_version']:
+                print ("Applying update_{}".format((update_n)))
+                # Wont exist on fresh installs
+                if os.path.exists(self.json_store_path):
+                    shutil.copyfile(self.json_store_path, self.datastore_path+"/url-watches-before-{}.json".format(update_n))
+
+                try:
+                    update_method = getattr(self, "update_{}".format(update_n))()
+                except Exception as e:
+                    print("Error while trying update_{}".format((update_n)))
+                    print(e)
+                    # Don't run any more updates
+                    return
+                else:
+                    # Bump the version, important
+                    self.__data['settings']['application']['schema_version'] = update_n
+
+    # Convert minutes to seconds on settings and each watch
+    def update_1(self):
+        if self.data['settings']['requests'].get('minutes_between_check'):
+            self.data['settings']['requests']['time_between_check']['minutes'] = self.data['settings']['requests']['minutes_between_check']
+            # Remove the default 'hours' that is set from the model
+            self.data['settings']['requests']['time_between_check']['hours'] = None
+
+        for uuid, watch in self.data['watching'].items():
+            if 'minutes_between_check' in watch:
+                # Only upgrade individual watch time if it was set
+                if watch.get('minutes_between_check', False):
+                    self.data['watching'][uuid]['time_between_check']['minutes'] = watch['minutes_between_check']
+
+    # Move the history list to a flat text file index
+    # Better than SQLite because this list is only appended to, and works across NAS / NFS type setups
+    def update_2(self):
+        # @todo test running this on a newly updated one (when this already ran)
+        for uuid, watch in self.data['watching'].items():
+            history = []
+
+            if watch.get('history', False):
+                for d, p in watch['history'].items():
+                    d = int(d)  # Used to be keyed as str, we'll fix this now too
+                    history.append("{},{}\n".format(d,p))
+
+                if len(history):
+                    target_path = os.path.join(self.datastore_path, uuid)
+                    if os.path.exists(target_path):
+                        with open(os.path.join(target_path, "history.txt"), "w") as f:
+                            f.writelines(history)
+                    else:
+                        logging.warning("Datastore history directory {} does not exist, skipping history import.".format(target_path))
+
+                # No longer needed, dynamically pulled from the disk when needed.
+                # But we should set it back to a empty dict so we don't break if this schema runs on an earlier version.
+                # In the distant future we can remove this entirely
+                self.data['watching'][uuid]['history'] = {}
+
+    # We incorrectly stored last_changed when there was not a change, and then confused the output list table
+    def update_3(self):
+        # see https://github.com/dgtlmoon/changedetection.io/pull/835
+        return
+
+    # `last_changed` not needed, we pull that information from the history.txt index
+    def update_4(self):
+        for uuid, watch in self.data['watching'].items():
+            try:
+                # Remove it from the struct
+                del(watch['last_changed'])
+            except:
+                continue
+        return

@@ -4,7 +4,7 @@ $(document).ready(function() {
     e.preventDefault();
     email = prompt("Destination email");
     if(email) {
-      var n = $("#notification_urls");
+      var n = $(".notification-urls");
       var p=email_notification_prefix;
       $(n).val( $.trim( $(n).val() )+"\n"+email_notification_prefix+email );
     }
@@ -25,10 +25,10 @@ $(document).ready(function() {
 
     data = {
         window_url : window.location.href,
-        notification_urls : $('#notification_urls').val(),
-        notification_title : $('#notification_title').val(),
-        notification_body : $('#notification_body').val(),
-        notification_format : $('#notification_format').val(),
+        notification_urls : $('.notification-urls').val(),
+        notification_title : $('.notification-title').val(),
+        notification_body : $('.notification-body').val(),
+        notification_format : $('.notification-format').val(),
     }
     for (key in data) {
       if (!data[key].length) {
@@ -40,13 +40,19 @@ $(document).ready(function() {
     $.ajax({
       type: "POST",
       url: notification_base_url,
-      data : data
+      data : data,
+        statusCode: {
+        400: function() {
+            // More than likely the CSRF token was lost when the server restarted
+          alert("There was a problem processing the request, please reload the page.");
+        }
+      }
     }).done(function(data){
       console.log(data);
       alert('Sent');
     }).fail(function(data){
       console.log(data);
-      alert('Error: '+data.responseJSON.error);
+      alert('There was an error communicating with the server.');
     })
   });
 });

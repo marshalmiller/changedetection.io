@@ -36,7 +36,7 @@ def test_check_notification(client, live_server):
     # Add our URL to the import page
     test_url = url_for('test_endpoint', _external=True)
     res = client.post(
-        url_for("api_watch_add"),
+        url_for("form_quick_watch_add"),
         data={"url": test_url, "tag": ''},
         follow_redirects=True
     )
@@ -98,7 +98,7 @@ def test_check_notification(client, live_server):
     notification_submission = None
 
     # Trigger a check
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
     time.sleep(3)
     # Verify what was sent as a notification, this file should exist
     with open("test-datastore/notification.txt", "r") as f:
@@ -133,7 +133,7 @@ def test_check_notification(client, live_server):
 
     # This should insert the {current_snapshot}
     set_more_modified_response()
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
     time.sleep(3)
     # Verify what was sent as a notification, this file should exist
     with open("test-datastore/notification.txt", "r") as f:
@@ -146,17 +146,21 @@ def test_check_notification(client, live_server):
     os.unlink("test-datastore/notification.txt")
 
     # Trigger a check
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
     time.sleep(1)
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
     time.sleep(1)
-    client.get(url_for("api_watch_checknow"), follow_redirects=True)
+    client.get(url_for("form_watch_checknow"), follow_redirects=True)
     time.sleep(1)
     assert os.path.exists("test-datastore/notification.txt") == False
 
+    res = client.get(url_for("notification_logs"))
+    # be sure we see it in the output log
+    assert b'New ChangeDetection.io Notification - ' + test_url.encode('utf-8') in res.data
+
     # cleanup for the next
     client.get(
-        url_for("api_delete", uuid="first"),
+        url_for("form_delete", uuid="all"),
         follow_redirects=True
     )
 
@@ -168,12 +172,11 @@ def test_notification_validation(client, live_server):
     # Add our URL to the import page
     test_url = url_for('test_endpoint', _external=True)
     res = client.post(
-        url_for("api_watch_add"),
+        url_for("form_quick_watch_add"),
         data={"url": test_url, "tag": 'nice one'},
         follow_redirects=True
     )
-    with open("xxx.bin", "wb") as f:
-        f.write(res.data)
+
     assert b"Watch added" in res.data
 
     # Re #360 some validation
@@ -195,11 +198,11 @@ def test_notification_validation(client, live_server):
     # Now adding a wrong token should give us an error
     res = client.post(
         url_for("settings_page"),
-        data={"notification_title": "New ChangeDetection.io Notification - {watch_url}",
-              "notification_body": "Rubbish: {rubbish}\n",
-              "notification_format": "Text",
-              "notification_urls": "json://localhost/foobar",
-              "time_between_check": {'seconds': 180},
+        data={"application-notification_title": "New ChangeDetection.io Notification - {watch_url}",
+              "application-notification_body": "Rubbish: {rubbish}\n",
+              "application-notification_format": "Text",
+              "application-notification_urls": "json://localhost/foobar",
+              "requests-time_between_check-minutes": 180,
               "fetch_backend": "html_requests"
               },
         follow_redirects=True
@@ -209,6 +212,6 @@ def test_notification_validation(client, live_server):
 
     # cleanup for the next
     client.get(
-        url_for("api_delete", uuid="first"),
+        url_for("form_delete", uuid="all"),
         follow_redirects=True
     )

@@ -19,9 +19,17 @@ services:
   
   #       WebDriver proxy settings webdriver_proxyType, webdriver_ftpProxy, webdriver_httpProxy, webdriver_noProxy,
   #                                webdriver_proxyAutoconfigUrl, webdriver_sslProxy, webdriver_autodetect,
+
   #                                webdriver_socksProxy, webdriver_socksUsername, webdriver_socksVersion, webdriver_socksPassword
   #
   #             https://selenium-python.readthedocs.io/api.html#module-selenium.webdriver.common.proxy
+  #
+  #       Alternative Playwright URL, do not use "'s or 's!
+  #      - PLAYWRIGHT_DRIVER_URL=ws://playwright-chrome:3000/?stealth=1&--disable-web-security=true
+  #
+  #       Playwright proxy settings playwright_proxy_server, playwright_proxy_bypass, playwright_proxy_username, playwright_proxy_password
+  #
+  #             https://playwright.dev/python/docs/api/class-browsertype#browser-type-launch-option-proxy
   #
   #        Plain requsts - proxy support example.
   #      - HTTP_PROXY=socks5h://10.10.1.10:1080
@@ -53,6 +61,24 @@ services:
             # See https://github.com/SeleniumHQ/docker-selenium#quick-start
             - /dev/shm:/dev/shm
         restart: unless-stopped
+
+     # Used for fetching pages via Playwright+Chrome where you need Javascript support.
+
+#    playwright-chrome:
+#        hostname: playwright-chrome
+#        image: browserless/chrome
+#        restart: unless-stopped
+#        environment:
+#            - SCREEN_WIDTH=1920
+#            - SCREEN_HEIGHT=1024
+#            - SCREEN_DEPTH=16
+#            - ENABLE_DEBUGGER=false
+#            - PREBOOT_CHROME=true
+#            - CONNECTION_TIMEOUT=300000
+#            - MAX_CONCURRENT_SESSIONS=10
+#            - CHROME_REFRESH_TIME=600000
+#            - DEFAULT_BLOCK_ADS=true
+#            - DEFAULT_STEALTH=true
 
 volumes:
   changedetection-data:

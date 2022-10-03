@@ -16,6 +16,7 @@ def cleanup(datastore_path):
     # Unlink test output files
     files = ['output.txt',
              'url-watches.json',
+             'secret.txt',
              'notification.txt',
              'count.txt',
              'endpoint-content.txt'
@@ -31,6 +32,8 @@ def app(request):
     """Create application for the tests."""
     datastore_path = "./test-datastore"
 
+    # So they don't delay in fetching
+    os.environ["MINIMUM_SECONDS_RECHECK_TIME"] = "0"
     try:
         os.mkdir(datastore_path)
     except FileExistsError:
